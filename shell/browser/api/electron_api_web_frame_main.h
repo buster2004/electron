@@ -76,6 +76,9 @@ class WebFrameMain : public gin::Wrappable<WebFrameMain>,
   void Send(bool internal,
             const std::string& channel,
             v8::Local<v8::Value> args);
+  void PostMessage(const std::string& channel,
+                   v8::Local<v8::Value> message_value,
+                   base::Optional<v8::Local<v8::Value>> transfer);
 
   int FrameTreeNodeID(v8::Isolate* isolate) const;
   std::string Name(v8::Isolate* isolate) const;

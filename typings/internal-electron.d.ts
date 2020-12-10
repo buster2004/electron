@@ -95,6 +95,7 @@ declare namespace Electron {
 
   interface WebFrameMain {
     _send(internal: boolean, channel: string, args: any): boolean;
+    _postMessage(channel: string, message: any, transfer?: any[]): void;
   }
 
   interface WebPreferences {

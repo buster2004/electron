@@ -15,6 +15,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "electron/shell/common/api/api.mojom.h"
 #include "gin/object_template_builder.h"
+#include "shell/browser/api/message_port.h"
 #include "shell/browser/browser.h"
 #include "shell/browser/javascript_environment.h"
 #include "shell/common/gin_converters/blink_converter.h"
@@ -26,6 +27,7 @@
 #include "shell/common/gin_helper/object_template_builder.h"
 #include "shell/common/gin_helper/promise.h"
 #include "shell/common/node_includes.h"
+#include "shell/common/v8_value_serializer.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 namespace electron {
@@ -136,6 +138,42 @@ void WebFrameMain::Send(bool internal,
       &electron_renderer);
   electron_renderer->Message(internal, channel, std::move(message),
                              0 /* sender_id */);
+}
+
+void WebFrameMain::PostMessage(const std::string& channel,
+                               v8::Local<v8::Value> message_value,
+                               base::Optional<v8::Local<v8::Value>> transfer) {
+  v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
+  blink::TransferableMessage transferable_message;
+  if (!electron::SerializeV8Value(isolate, message_value,
+                                  &transferable_message)) {
+    // SerializeV8Value sets an exception.
+    return;
+  }
+
+  std::vector<gin::Handle<MessagePort>> wrapped_ports;
+  if (transfer) {
+    if (!gin::ConvertFromV8(isolate, *transfer, &wrapped_ports)) {
+      isolate->ThrowException(v8::Exception::Error(
+          gin::StringToV8(isolate, "Invalid value for transfer")));
+      return;
+    }
+  }
+
+  bool threw_exception = false;
+  transferable_message.ports =
+      MessagePort::DisentanglePorts(isolate, wrapped_ports, &threw_exception);
+  if (threw_exception)
+    return;
+
+  if (!CheckRenderFrame())
+    return;
+
+  mojo::AssociatedRemote<mojom::ElectronRenderer> electron_renderer;
+  render_frame_->GetRemoteAssociatedInterfaces()->GetInterface(
+      &electron_renderer);
+  electron_renderer->ReceivePostMessage(channel,
+                                        std::move(transferable_message));
 }
 
 int WebFrameMain::FrameTreeNodeID(v8::Isolate* isolate) const {
@@ -255,6 +293,7 @@ v8::Local<v8::ObjectTemplate> WebFrameMain::FillObjectTemplate(
       .SetMethod("executeJavaScript", &WebFrameMain::ExecuteJavaScript)
       .SetMethod("reload", &WebFrameMain::Reload)
       .SetMethod("_send", &WebFrameMain::Send)
+      .SetMethod("_postMessage", &WebFrameMain::PostMessage)
       .SetProperty("frameTreeNodeId", &WebFrameMain::FrameTreeNodeID)
       .SetProperty("name", &WebFrameMain::Name)
       .SetProperty("osProcessId", &WebFrameMain::OSProcessID)

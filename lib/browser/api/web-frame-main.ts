@@ -1,3 +1,5 @@
+import { MessagePortMain } from '@electron/internal/browser/message-port-main';
+
 const { WebFrameMain, fromId } = process._linkedBinding('electron_browser_web_frame_main');
 
 WebFrameMain.prototype.send = function (channel, ...args) {
@@ -6,6 +8,13 @@ WebFrameMain.prototype.send = function (channel, ...args) {
   }
 
   return this._send(false /* internal */, channel, args);
+};
+
+WebFrameMain.prototype.postMessage = function (...args) {
+  if (Array.isArray(args[2])) {
+    args[2] = args[2].map(o => o instanceof MessagePortMain ? o._internalPort : o);
+  }
+  this._postMessage(...args);
 };
 
 export default {
